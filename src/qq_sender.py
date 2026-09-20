@@ -3,6 +3,7 @@
 import json
 import os
 import time
+import urllib.error
 import urllib.request
 
 API_BASE = "https://api.bot.qq.com"
@@ -20,8 +21,18 @@ def _post_json(url, payload, headers=None):
         headers={"Content-Type": "application/json", **(headers or {})},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=5) as resp:
-        return json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            return json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        # HTTPError 的 str 只有状态码，QQ 的 code/err_code/message 在响应体里，不读出来就永远查不到原因
+        detail = e.read().decode("utf-8", "replace")[:300]
+        raise RuntimeError(f"HTTP {e.code} {url[len(API_BASE):]} -> {detail}") from None
+
+
+def invalidate_token():
+    """丢弃缓存的 access token：重试发送前强制换一张（多实例各持一份缓存）。"""
+    _token_cache.update({"token": "", "expire_at": 0.0})
 
 
 def get_access_token():
@@ -40,12 +51,17 @@ def get_access_token():
     return _token_cache["token"]
 
 
-def send_group_reply(group_openid, msg_id, content, msg_seq=1):
-    """群聊被动回复文本。msg_id 须为触发消息 id（5 分钟内有效，最多回复 5 次，靠 msg_seq 区分）。"""
+def send_group_reply(group_openid, msg_id, content, msg_seq=1, msg_type=0):
+    """群聊被动回复。msg_id 须为触发消息 id（5 分钟内有效，最多回复 5 次，靠 msg_seq 区分）。"""
     token = get_access_token()
+    payload = {"msg_type": msg_type, "msg_id": msg_id, "msg_seq": msg_seq}
+    if msg_type == 2:
+        payload["markdown"] = {"content": content}
+    else:
+        payload["content"] = content
     data = _post_json(
         f"{API_BASE}/v2/groups/{group_openid}/messages",
-        {"content": content, "msg_type": 0, "msg_id": msg_id, "msg_seq": msg_seq},
+        payload,
         {"Authorization": f"QQBot {token}"},
     )
     print("group reply sent, msg_id =", data.get("id"))

@@ -1,12 +1,13 @@
 """api.py 测试：字段映射、未报/异常分类、令牌缺失与过期报错（全部离线，HTTP 调用 mock）。"""
 
+import base64
 import io
 import json
 import os
 import sys
 import unittest
 import urllib.error
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -110,6 +111,59 @@ class TestBuildReply(unittest.TestCase):
     def test_empty_rows(self):
         reply = api.build_rollcall_reply([], now=NOW)
         self.assertIn("暂无数据", reply)
+
+
+class TestTokenExpiry(unittest.TestCase):
+    @staticmethod
+    def _jwt(expires_at):
+        def b64(obj):
+            return base64.urlsafe_b64encode(json.dumps(obj).encode()).decode().rstrip("=")
+        return f"{b64({'alg': 'HS256'})}.{b64({'exp': int(expires_at.timestamp())})}.sig"
+
+    def _hours(self, hours_left):
+        return mock.patch.object(api, "APP_TOKEN", self._jwt(NOW + timedelta(hours=hours_left)))
+
+    def test_hours_parsed_from_jwt(self):
+        with self._hours(72):
+            self.assertAlmostEqual(api.token_hours_left(NOW), 72, places=1)
+
+    def test_non_jwt_token_yields_none_without_breaking_reply(self):
+        with mock.patch.object(api, "APP_TOKEN", "plain-old-token"):
+            self.assertIsNone(api.token_hours_left(NOW))
+            self.assertEqual(api.token_expiry_notice(NOW), "")
+
+    def test_unusable_exp_claim_yields_none(self):
+        bad = f"{self._jwt(NOW).split('.')[0]}.{base64.urlsafe_b64encode(b'not-json').decode().rstrip('=')}.sig"
+        with mock.patch.object(api, "APP_TOKEN", bad):
+            self.assertIsNone(api.token_hours_left(NOW))
+
+    def test_no_notice_while_plenty_of_time(self):
+        with self._hours(72):
+            self.assertEqual(api.token_expiry_notice(NOW), "")
+            self.assertNotIn("提醒", api.build_rollcall_reply(NORMALIZED_ROWS, now=NOW))
+
+    def test_notice_appended_near_expiry(self):
+        with self._hours(10):
+            reply = api.build_rollcall_reply(NORMALIZED_ROWS, now=NOW)
+            empty = api.build_rollcall_reply([], now=NOW)
+        self.assertIn("将在约 10 小时后到期", reply)
+        self.assertTrue(reply.endswith("否则查询会失败。"))
+        self.assertIn("点名表暂无数据", empty)
+        self.assertIn("【提醒】", empty)
+
+    def test_notice_when_already_expired(self):
+        with self._hours(-1):
+            self.assertIn("已过期", api.token_expiry_notice(NOW))
+
+
+class TestFindLeader(unittest.TestCase):
+    def test_matches_student_id_regardless_of_spaces(self):
+        self.assertEqual(api.find_leader(NORMALIZED_ROWS, " 261880003 ")["dorm"], "陶三-201")
+
+    def test_blank_or_unknown_returns_none(self):
+        self.assertIsNone(api.find_leader(NORMALIZED_ROWS, ""))
+        self.assertIsNone(api.find_leader(NORMALIZED_ROWS, None))
+        self.assertIsNone(api.find_leader(NORMALIZED_ROWS, "261889999"))
 
 
 if __name__ == "__main__":

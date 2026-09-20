@@ -1,9 +1,11 @@
 """qq_sender.py 测试：token 获取/缓存与群回复请求格式（HTTP 层 mock）。"""
 
+import io
 import json
 import os
 import sys
 import unittest
+import urllib.error
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -54,6 +56,30 @@ class TestSendGroupReply(unittest.TestCase):
         self.assertEqual(body["msg_id"], "MSG123")
         self.assertEqual(body["msg_seq"], 1)
         self.assertEqual(body["content"], "你好")
+
+    def test_markdown_payload_shape(self):
+        resp = _mock_response({"id": "RET2"})
+        with mock.patch("qq_sender.get_access_token", return_value="TOKEN123"), \
+             mock.patch("urllib.request.urlopen", return_value=resp) as urlopen:
+            qq_sender.send_group_reply("GROUP1", "MSG123", "@ 测试", msg_seq=3, msg_type=2)
+        body = json.loads(urlopen.call_args[0][0].data.decode())
+        self.assertEqual(body["msg_type"], 2)
+        self.assertEqual(body["markdown"], {"content": "@ 测试"})
+        self.assertNotIn("content", body)
+        self.assertEqual(body["msg_seq"], 3)
+
+    def test_http_error_detail_is_preserved(self):
+        err = urllib.error.HTTPError(
+            "https://api.bot.qq.com/v2/groups/GROUP1/messages",
+            400, "Bad Request", {}, io.BytesIO(b'{"code":11293,"err_code":40011026,"message":"msg_id is invalid"}'),
+        )
+        with mock.patch("qq_sender.get_access_token", return_value="TOKEN123"), \
+             mock.patch("urllib.request.urlopen", side_effect=err):
+            with self.assertRaises(RuntimeError) as ctx:
+                qq_sender.send_group_reply("GROUP1", "MSG123", "你好")
+        text = str(ctx.exception)
+        self.assertIn("HTTP 400", text)
+        self.assertIn("msg_id is invalid", text)
 
 
 if __name__ == "__main__":

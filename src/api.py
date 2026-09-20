@@ -1,5 +1,6 @@
 """点名数据源：调用南大表格（SeaTable）外部应用接口查询晚点名情况。"""
 
+import base64
 import json
 import os
 import urllib.error
@@ -16,6 +17,8 @@ PAGE_ID = os.environ.get("ROLLCALL_PAGE_ID", "XY1Z")
 APP_TOKEN = os.environ.get("ROLLCALL_API_TOKEN", "")
 
 OK_STATUS = "全部到位"
+# 令牌余量低于此小时数才在群回复里提醒：平时不显示，免得干扰群里同学
+TOKEN_WARN_HOURS = 48
 
 
 class RollcallApiError(Exception):
@@ -74,12 +77,9 @@ def fetch_rollcall_rows():
     return rows
 
 
-def build_rollcall_reply(rows=None, now=None):
-    """汇总点名数据生成群回复：未报宿舍、异常宿舍、已报统计（当日日期为空或非今天即未报）。"""
-    if rows is None:
-        rows = fetch_rollcall_rows()
+def summarize(rows, now=None):
+    """把点名行分成未报 / 异常 / 已报（当日日期为空或非今天即未报）。"""
     today = (now or datetime.now(TZ_SHANGHAI)).strftime("%Y-%m-%d")
-
     pending, abnormal, ok_count = [], [], 0
     for r in rows:
         date = str(r.get("date") or "")[:10]
@@ -90,9 +90,51 @@ def build_rollcall_reply(rows=None, now=None):
             ok_count += 1
         else:
             abnormal.append(r)
+    return {"today": today, "pending": pending, "abnormal": abnormal, "ok_count": ok_count}
+
+
+def find_leader(rows, student_id):
+    """按宿舍长学号在点名行中定位其宿舍，用于「绑定」时核对身份；查不到返回 None。"""
+    sid = str(student_id or "").strip()
+    if not sid:
+        return None
+    for r in rows:
+        if str(r.get("student_id") or "").strip() == sid:
+            return r
+    return None
+
+
+def token_hours_left(now=None):
+    """从令牌 JWT 的 exp 离线算出剩余小时数；不是 JWT / 解不出则返回 None（不影响查询）。"""
+    try:
+        payload = APP_TOKEN.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        exp = json.loads(base64.urlsafe_b64decode(payload).decode())["exp"]
+        return (datetime.fromtimestamp(exp, TZ_SHANGHAI) - (now or datetime.now(TZ_SHANGHAI))).total_seconds() / 3600
+    except (IndexError, KeyError, TypeError, ValueError):
+        return None
+
+
+def token_expiry_notice(now=None):
+    """令牌临期提醒；余量充足或无法判断时返回空串（不给群里加噪音）。"""
+    left = token_hours_left(now)
+    if left is None or left > TOKEN_WARN_HOURS:
+        return ""
+    when = "已过期" if left <= 0 else f"将在约 {int(left)} 小时后到期"
+    return f"【提醒】点名数据凭证{when}，请班长更新一次，否则查询会失败。"
+
+
+def build_rollcall_reply(rows=None, now=None):
+    """汇总点名数据生成群回复：未报宿舍、异常宿舍、已报统计。"""
+    if rows is None:
+        rows = fetch_rollcall_rows()
+    s = summarize(rows, now)
+    pending, abnormal, ok_count, today = s["pending"], s["abnormal"], s["ok_count"], s["today"]
+    notice = token_expiry_notice(now)
 
     if not rows:
-        return f"【晚点名情况 {today}】点名表暂无数据。"
+        base = f"【晚点名情况 {today}】点名表暂无数据。"
+        return f"{base}\n{notice}" if notice else base
     lines = [f"【晚点名情况 {today}】"]
     if pending:
         lines.append(f"未报宿舍 {len(pending)} 个：")
@@ -104,4 +146,6 @@ def build_rollcall_reply(rows=None, now=None):
         lines.append(f"全部 {len(rows)} 个宿舍已报且全部到位。")
     else:
         lines.append(f"其余 {ok_count} 个宿舍已报且全部到位。")
+    if notice:
+        lines.append(notice)
     return "\n".join(lines)
