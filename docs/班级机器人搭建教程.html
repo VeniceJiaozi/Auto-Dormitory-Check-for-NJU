@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>班级晚点名 QQ 机器人搭建教程</title>
+<style>
+@page { size: A4; margin: 18mm 16mm; }
+* { box-sizing: border-box; }
+body { font-family: "Microsoft YaHei", "PingFang SC", "Source Han Sans CN", sans-serif;
+  font-size: 10.5pt; line-height: 1.72; color: #1f2328; margin: 0; }
+h1 { font-size: 21pt; margin: 0 0 6pt; }
+h2 { font-size: 14pt; margin: 20pt 0 6pt; padding-bottom: 4pt; border-bottom: 2px solid #2f6feb; color: #14418f; page-break-after: avoid; }
+h3 { font-size: 11.5pt; margin: 13pt 0 4pt; color: #24292f; page-break-after: avoid; }
+p, li { margin: 4pt 0; }
+ul, ol { margin: 4pt 0 4pt; padding-left: 20pt; }
+code, pre { font-family: Consolas, "Courier New", monospace; }
+code { background: #f0f2f5; padding: 1pt 4pt; border-radius: 3pt; font-size: 9.5pt; }
+pre { background: #f6f8fa; border: 1px solid #d6dade; border-left: 3px solid #2f6feb;
+  padding: 7pt 9pt; border-radius: 4pt; white-space: pre-wrap; word-break: break-all;
+  font-size: 9pt; line-height: 1.5; page-break-inside: avoid; }
+table { border-collapse: collapse; width: 100%; margin: 7pt 0; font-size: 9.5pt; page-break-inside: avoid; }
+th, td { border: 1px solid #ccd0d5; padding: 4pt 6pt; text-align: left; vertical-align: top; }
+th { background: #eef1f5; }
+.cover { text-align: center; padding-top: 120pt; page-break-after: always; }
+.cover .sub { font-size: 12pt; color: #57606a; margin-top: 10pt; }
+.cover .meta { font-size: 9.5pt; color: #8b949e; margin-top: 60pt; line-height: 2; }
+.warn { background: #fff5e6; border: 1px solid #f0c36d; border-left: 4px solid #d99500; padding: 6pt 9pt; border-radius: 4pt; margin: 8pt 0; page-break-inside: avoid; }
+.ok { background: #eefbf1; border: 1px solid #9be0ab; border-left: 4px solid #2da44e; padding: 6pt 9pt; border-radius: 4pt; margin: 8pt 0; page-break-inside: avoid; }
+.pagebreak { page-break-before: always; }
+.toc li { margin: 2pt 0; }
+.small { font-size: 9pt; color: #57606a; }
+.step { display: inline-block; background: #2f6feb; color: #fff; border-radius: 3pt; padding: 0 6pt; font-size: 9.5pt; margin-right: 6pt; }
+kbd { border: 1px solid #b6bcc4; border-bottom-width: 2px; border-radius: 3pt; padding: 0 4pt; font-size: 9pt; background: #f6f8fa; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>班级晚点名 QQ 机器人<br>搭建教程</h1>
+  <div class="sub">群里 <code>@机器人 查未点名</code> → 自动回复未报名单，并 <b>直接 @ 到没点名的宿舍长</b></div>
+  <div class="sub"><b>面向零编程基础的班长</b>｜预计 60～90 分钟｜全程使用免费额度</div>
+  <div class="meta">
+    项目仓库：<code>github.com/VeniceJiaozi/Auto-Dormitory-Check-for-NJU</code><br>
+    技术栈：Python 标准库 + QQ 开放平台官方 Bot API + 腾讯云函数 SCF + 南大表格（SeaTable）<br>
+    教程版本 v1.0（2026-09-20）｜由 2026 级技科 7 班实测记录整理
+  </div>
+</div>
+
+<h2>写在前面：你会得到什么、需要准备什么</h2>
+<p><b>做完之后：</b>班里任何同学在群里 <code>@机器人 查未点名</code>（或 <code>点名</code>），机器人 1 秒左右回复两条消息——第一条是未报/异常宿舍的文字名单，第二条把没点名的宿舍长<b>逐个真 @ 出来</b>（对方收到红点提醒）。同学也可以 <code>@机器人 帮助</code> 看用法。</p>
+
+<h3>准备清单</h3>
+<table>
+<tr><th>需要的东西</th><th>说明 / 没有的话怎么办</th></tr>
+<tr><td>一个 QQ 群，且你是群主或管理员</td><td>机器人只能被邀请进自己管理的群。</td></tr>
+<tr><td>能上网的电脑（Windows / Mac 都行）</td><td>需要浏览器 + 命令行（后面每条命令都给了复制粘贴版本）。</td></tr>
+<tr><td>Python 3.9 或更新</td><td>只用于跑测试和打包，机器人本体跑在腾讯云上，不在你电脑上。没有 Python 也能照做，但会少一层自检。</td></tr>
+<tr><td>腾讯云账号（用 QQ 登录即可）</td><td>免费额度足够；本教程不开通任何收费产品。</td></tr>
+<tr><td>你们班的晚点名表（南大表格 SeaTable）</td><td><b>最关键的一项</b>，见下一节。如果学院已有全院统一的点名表，需要向表格所有者要一个「外部应用」查看链接。</td></tr>
+<tr><td>QQ 开放平台注册机器人（约 10 分钟）</td><td>需要实名手机号；要让全班正常使用还需完成<b>个人主体认证</b>。</td></tr>
+</table>
+
+<div class="warn"><b>先说三个"做不到"，免得你走弯路：</b>
+① 机器人只能收到 <b>@ 了它</b> 的消息，看不到群里其他聊天内容；
+② 它<b>不能主动定时播报</b>（本教程不含该功能，且受平台权限限制）；
+③ 点名表的<b>访问令牌约 3 天过期</b>，需要你每 3 天左右复制粘贴更新一次（约 2 分钟，机器人也会在名单快过期时自动提醒你）。
+</div>
+
+<h2>第 0 步　看懂整条链路（3 分钟，很重要）</h2>
+<pre>同学群里发：@机器人 查未点名
+        ↓
+【QQ 开放平台】① 把这条事件推给你的云函数地址（Webhook）
+        ↓
+【腾讯云函数 SCF · bot.py】
+        ├─ ② 带着令牌去查点名表 ↓
+        │        【南大表格 SeaTable】返回全部宿舍行 → 分成"未报 / 异常"
+        └─ ③ 把名单 + @ 发回群里 ↑</pre>
+<p>所以一共要配三个东西：<b>QQ 开放平台</b>（知道往哪推）、<b>云函数</b>（真正干活）、<b>点名表接口</b>（数据从哪来）。三者靠 <b>5 个环境变量</b>串起来，全部配置都在网页上完成，<b>不需要改一行代码</b>。</p>
+<p>代码已经写好在仓库里，目录长这样：</p>
+<table>
+<tr><th>文件</th><th>作用</th></tr>
+<tr><td><code>src/bot.py</code></td><td>云函数入口：验签、路由指令、发两条回复</td></tr>
+<tr><td><code>src/api.py</code></td><td>查点名表 + 分类未报/异常 + 算令牌余量</td></tr>
+<tr><td><code>src/qq_sender.py</code></td><td>取 access token、往群里发消息</td></tr>
+<tr><td><code>src/ed25519.py</code></td><td>回调验签用的签名算法（纯标准库，无需安装任何东西）</td></tr>
+<tr><td><code>tests/</code>、<code>local_e2e.py</code></td><td>离线测试与本地联调（<b>不会</b>真的往群里发消息）</td></tr>
+</table>
+
+<div class="pagebreak"></div>
+<h2><span class="step">第 1 步</span>确认你们班的点名表能被读取</h2>
+<p>机器人不碰你班那张表的写入权限，<b>只读</b>。它靠"列名前缀"认列，因此你们班的表<b>只要有下面 5 列、且列名以这些词开头</b>就能直接用（列的先后顺序无所谓，列的 ID 变了也无所谓）：</p>
+<table>
+<tr><th>必须存在的列名（前缀匹配）</th><th>示例值</th><th>机器人怎么用它</th></tr>
+<tr><td><code>宿舍号</code></td><td>南二-425</td><td>名单里显示的主键</td></tr>
+<tr><td><code>宿舍长姓名</code></td><td>张三</td><td>名单里括号中的名字</td></tr>
+<tr><td><code>宿舍长学号</code></td><td>261880001</td><td><b>绑定身份的唯一依据</b>，必须准确</td></tr>
+<tr><td><code>当日日期</code></td><td>2026-09-20T00:00:00+08:00</td><td>不是今天 / 为空 = <b>未报</b></td></tr>
+<tr><td><code>当日晚点名情况</code></td><td>全部到位 / 未全部到位</td><td>不等于「全部到位」= <b>异常</b>，原文展示</td></tr>
+</table>
+<div class="warn">如果你们班表里的列名是「晚点名情况」「宿舍长」之类的其他叫法，两种解决办法：<b>①</b> 把列名改成上表的写法（推荐，改一次就好）；<b>②</b> 改 <code>src/api.py</code> 里 <code>_keymap()</code> 的几个前缀字符串（一行一处）。</div>
+
+<h3>1.1 拿到三个参数</h3>
+<ol>
+<li>用浏览器打开你们班的<b>晚点名查询应用页面</b>（SeaTable 的 custom app 链接，形如 <code>https://table.nju.edu.cn/apps/custom/&lt;你的应用&gt;/?page_id=XXXX</code>），需要南大统一身份认证登录。</li>
+<li>按 <kbd>F12</kbd> 打开开发者工具 → 切到 <b>Network（网络）</b> 标签 → 刷新页面 → 找到那条请求地址里含 <code>universal-apps/</code> 的接口（点开它，能看到 <code>"success": true</code> 和一堆行数据）。</li>
+<li>从这条请求里抄下两样东西：<b>接口 URL</b>（到 <code>/rows/</code> 为止，不含问号后面）和 <b><code>page_id=</code> 后面的那串</b>。</li>
+<li>再取<b>访问令牌</b>：切到 <b>Console（控制台）</b>标签，粘贴执行下面这行，令牌就进剪贴板了：
+<pre>copy(document.documentElement.outerHTML.match(/accessToken:\s*'([^']+)'/)[1])</pre>
+</li>
+</ol>
+<div class="ok"><b>自检：</b>在 Console 里执行下面两行，能看到 <code>"success":true</code> 说明令牌和 URL 都对了（把 <code>URL</code>、<code>PAGE</code>、<code>TOKEN</code> 换成你抄到的值）：
+<pre>fetch("URL?page_id=PAGE&start=0&limit=3",{headers:{Authorization:"Token "+"TOKEN"}})
+  .then(r=>r.json()).then(d=>console.log(d.success, d.results.length))</pre>
+</div>
+<p class="small">令牌有效期约 3 天。它过期后机器人会在群里回「点名数据查询失败」，重取一次填进环境变量即可。</p>
+
+<h2><span class="step">第 2 步</span>在 QQ 开放平台建一个机器人</h2>
+<ol>
+<li>打开 <code>bot.q.qq.com</code>（QQ 开放平台）→ 登录 → <b>创建机器人</b>。名称、头像、简介自便（例：「XX班点名助手」）。</li>
+<li>进入机器人后台 → <b>开发设置</b>，抄下 <b>AppID</b> 和 <b>AppSecret</b>。<span class="warn" style="display:inline-block;padding:1pt 6pt">AppSecret 等于密码，别发群、别截图给别人、别写进代码。</span></li>
+<li>同一页把「<b>接入方式</b>」选 <b>Webhook</b>，<b>回调地址</b>先留空——它要等第 4 步云函数建好才有值（平台保存时会立刻向该地址发一次验证请求，所以<b>顺序不能颠倒</b>）。</li>
+<li>如需让全班同学都能用，去「后台设置 / 主体信息」完成<b>个人主体认证</b>（要实名手机号 + 身份证）。<span class="small">实测：未认证不影响你自己群里 @ 它拿回复，但会锁住「服务范围」，面向全班正式发布前必须认证。</span></li>
+</ol>
+
+<div class="pagebreak"></div>
+<h2><span class="step">第 3 步</span>下载代码，本地跑一遍测试</h2>
+<p>打开命令行（Windows：<kbd>Win</kbd>+<kbd>R</kbd> 输入 <code>cmd</code>；Mac：终端），逐行执行：</p>
+<pre>git clone https://github.com/VeniceJiaozi/Auto-Dormitory-Check-for-NJU.git
+cd Auto-Dormitory-Check-for-NJU
+python -m unittest discover -s tests</pre>
+<div class="ok">看到 <code>Ran 40 tests in ...</code> 和 <code>OK</code> 就说明代码没问题（测试全离线，<b>不会</b>调用任何真实接口、不会发消息）。</div>
+<p>然后建一份自己的配置。<b>用记事本打开</b> <code>config/.env.example</code>，另存为 <code>config/.env</code>，把等号右边填上你的值：</p>
+<pre>QQ_BOT_APP_ID=你的AppID
+QQ_BOT_APP_SECRET=你的AppSecret
+ROLLCALL_API_URL=https://table.nju.edu.cn/api/v2.1/universal-apps/你们的ID/rows/
+ROLLCALL_PAGE_ID=你的page_id
+ROLLCALL_API_TOKEN=刚复制的令牌</pre>
+<div class="warn"><code>.env</code> 已被仓库的 <code>.gitignore</code> 排除，<b>永远不要把它提交或发到群里</b>。<span class="small">说明：<code>.env.example</code> 里的默认 URL/page_id 指向的是<b>本班的点名表</b>，你换了班级一定要改成自己应用的值（第 1 步抄下来的那两行）。</span></div>
+<div class="ok">机器人改了名字<b>不用</b>动代码：QQ 把 @ 传成 <code>&lt;@!数字&gt;</code> 这种标记，<code>src/bot.py</code> 里的 <code>MENTION</code> 正则会先把它整段去掉再比对指令，跟机器人叫什么无关。</div>
+
+<h2><span class="step">第 4 步</span>部署到腾讯云函数 SCF</h2>
+<h3>4.1 打包</h3>
+<p>在项目根目录执行（PowerShell 用 <code>Compress-Archive</code>，或直接用 Python 一行）：</p>
+<pre>python -c "import zipfile,os; z=zipfile.ZipFile('deploy/rollcall_bot.zip','w',zipfile.ZIP_DEFLATED); [z.write(os.path.join('src',f),f) for f in ['bot.py','api.py','qq_sender.py','ed25519.py']]; z.close(); print(os.path.getsize('deploy/rollcall_bot.zip'))"
+</pre>
+<p class="small">⚠️ 关键：zip <b>根目录</b>要直接是 <code>bot.py</code>、<code>api.py</code>……，不能包一层 <code>src/</code> 文件夹，否则函数找不到入口。仓库里已带一份 <code>deploy/rollcall_bot.zip</code>，改了代码就按上面重新生成。</p>
+
+<h3>4.2 新建函数</h3>
+<ol>
+<li>腾讯云控制台 → <b>云函数 SCF</b> → 地域选 <b>广州</b> → <b>新建 → 从头创建</b>。</li>
+<li>填写：函数类型 <b>事件函数</b>｜名称如 <code>rollcall-bot</code>｜运行环境 <b>Python 3.9</b>｜执行超时时间 <b>10 秒</b>｜内存 <b>128MB</b>｜提交方法选 <b>本地上传 zip 包</b>（选中后才会出现上传按钮）｜函数入口 <code>bot.main_handler</code>。</li>
+<li>权限：不用选任何运行角色（函数不出网访问你的云资源）。</li>
+<li>创建完成后，在「函数配置」里核对：<b>公网访问</b>为已启用（要访问 <code>table.nju.edu.cn</code> 和 QQ 接口）。</li>
+</ol>
+
+<h3>4.3 填环境变量</h3>
+<p>「函数配置 → 编辑 → 环境变量」，把第 3 步 <code>.env</code> 里那 <b>5 行</b>原样填进去（键名完全照抄，大小写敏感）。<b>保存。</b></p>
+<p class="small">第 6 步做「直接 @」时还会再加第 6 个变量 <code>QQ_ROSTER_JSON</code>，现在不用管。</p>
+
+<h3>4.4 开一个「函数 URL」当回调地址</h3>
+<ol>
+<li>函数详情页 → <b>函数 URL</b> → 创建。<span class="small">不要用「API 网关触发器」，该入口 2024-07 起已不可新建。</span></li>
+<li>访问类型 <b>公网访问、授权「开放」</b>；务必勾选 <b>「参数兼容」</b>（不勾的话函数读不到 QQ 推来的原始 JSON，机器人会永远"没反应"）。</li>
+<li>创建后得到形如 <code>https://xxxx.ap-guangzhou.tencentscf.com</code> 的地址，<b>复制备用</b>。</li>
+</ol>
+
+<div class="pagebreak"></div>
+<h2><span class="step">第 5 步</span>先自测，再回 QQ 平台填回调</h2>
+<h3>5.1 命令行自测（模拟一次 @ 机器人）</h3>
+<pre>python -c "import json,urllib.request as u; b={'id':'t','op':0,'t':'GROUP_AT_MESSAGE_CREATE','d':{'group_openid':'GROUP','content':'查未点名','author':{'member_openid':'S'},'id':'M1'}}; r=u.Request('https://你的函数URL',data=json.dumps(b).encode(),headers={'Content-Type':'application/json'},method='POST'); print(u.urlopen(r,timeout=20).read().decode())"</pre>
+<div class="ok">期望输出：<code>{"replied": "rollcall", "pending": 数字, "sent": [false, false]}</code>。<br>
+<code>pending</code> 有数字 ⇒ 点名表读通了。<code>sent:[false,false]</code> 是<b>正常</b>的（我们故意用了假群号，发不出去）。若 <code>pending=0</code> 或报 <code>api error</code>，见第 7 步排查。</div>
+<p class="small">另一个不用命令行的办法：SCF 控制台「函数代码 → 测试」面板，事件内容填
+<code>{"body": "{\"op\":0,\"t\":\"GROUP_AT_MESSAGE_CREATE\",\"d\":{\"content\":\"查未点名\",\"group_openid\":\"G\",\"author\":{\"member_openid\":\"S\"},\"id\":\"M1\"}}", "isBase64Encoded": false}</code>，
+点「测试」后右侧<b>执行日志</b>会打印函数里所有 <code>print</code>——这是不开通日志服务也能看到内部过程的关键技巧。</p>
+
+<h3>5.2 回 QQ 开放平台保存回调地址</h3>
+<ol>
+<li>把函数 URL 填进「开发设置 → 回调地址」，<b>接入方式选 Webhook</b>，保存。</li>
+<li>平台保存时会向你的地址发一次 <code>op=13</code> 验证请求，通过即显示「校验成功」。<span class="small">若提示 <code>40001 签名校验不通过 / 40002 回调地址状态同步失败</code>，通常是云端签名超过了平台的 3 秒超时——本仓库已内置快速签名实现（约 0.2 秒），若仍失败请把函数内存调到 256MB 再试。</span></li>
+<li>再到「<b>接收事件配置</b>」把订阅方式设为 <b>全部接收</b>（至少要有 <code>GROUP_AT_MESSAGE_CREATE</code>）并保存。<b>刷新页面确认还是"全部接收"</b>——保存失败时页面会静默退回"部分接收 0/51"，这个坑非常迷惑人。</li>
+</ol>
+
+<h3>5.3 把机器人请进群</h3>
+<p>在 QQ 群的群机器人管理里添加你的机器人（或用后台生成的邀请链接）。进群后 <code>@机器人 查未点名</code>，第一次就要看到名单回复。</p>
+<div class="ok"><b>到这里，"能用"就已经全部搞定了。</b>下面第 6 步是它最有价值的部分——被点名的宿舍长会被直接 @ 到。</div>
+
+<h2><span class="step">第 6 步</span>开启「直接 @ 未报宿舍长」（10 分钟，可选但强烈推荐）</h2>
+<p>原理：QQ 只给了机器人一串<b>群内匿名 ID（member_openid）</b>，它<b>不是 QQ 号</b>、也无法从接口批量导出（成员列表接口需向平台申请白名单）。所以只能<b>请每位宿舍长自己 @ 机器人一次</b>，机器人回给你一串对应关系，你抄进云函数即可。</p>
+<ol>
+<li>在班群发通知：
+<pre>@你们的机器人 绑定 你的学号
+（例如：@点名助手 绑定 261880001，「绑定」和学号之间有没有空格都行）</pre>
+</li>
+<li>机器人会回三行，最后一行形如 <code>261880001=1111111111111111111111111111AAAA</code>（右半边是那位同学的 32 位群内标识）。<b>它已经核对过</b>：这个学号在你们班点名表里确实是某宿舍的宿舍长，且是本人发的；学号不存在它会直接说明。</li>
+<li>把这些「学号=openid」交给 AI 助手（或自己整理）成下面这个 JSON，填到云函数环境变量 <b><code>QQ_ROSTER_JSON</code></b> 并保存：
+<pre>{"261880001":"1111111111111111111111111111AAAA","261880002":"2222222222222222222222222222BBBB"}</pre>
+</li>
+<li>群里再发一次 <code>@机器人 查未点名</code>：未报的宿舍长会被<b>蓝色 @、收到红点提醒</b>；还没绑定的会以「宿舍号（姓名）」列在后面，一条都不会漏。</li>
+</ol>
+<div class="warn"><b>换宿舍长 / 新同学怎么办？</b>让新人发一次「绑定 本人学号」，把新的那一行加进 <code>QQ_ROSTER_JSON</code> 保存即可。<b>只改环境变量，不用改代码、不用重新部署。</b></div>
+
+<div class="pagebreak"></div>
+<h2><span class="step">第 7 步</span>日常运维与故障排查</h2>
+<h3>7.1 每 3 天换一次点名令牌（约 2 分钟）</h3>
+<p>机器人会在<b>余量不足 48 小时</b>时，自动在「查未点名」回复末尾加一行提醒。看到提醒就照第 1.1 节重新复制令牌，替换云函数环境变量 <code>ROLLCALL_API_TOKEN</code>，保存即生效。</p>
+
+<h3>7.2 排查表（按"最可能"排序）</h3>
+<table>
+<tr><th>现象</th><th>最可能的原因</th><th>怎么办</th></tr>
+<tr><td>群里 @ 它<b>完全没反应</b></td><td>QQ 平台侧根本没推过来（回调地址没保存成功 / 事件没订阅 / 机器人不在群里）</td><td>看 SCF「监控 → 分钟级<b>调用次数</b>」：那个时刻有 1 次调用 = 平台推到了，问题在函数里；<b>0 次</b> = 回第 5.2 步，重新保存回调地址与"全部接收"，并刷新页面确认真的存住了。</td></tr>
+<tr><td>有 1 次调用但<b>耗时只有 1 毫秒</b>、群里无回复</td><td>事件没匹配上任何分支（最常见是把事件类型字段写成了 <code>type</code>——官方信封里是 <code>t</code>）</td><td>确认函数代码是仓库最新版；<b>别信自己拼的测试数据</b>，以 <code>bot.q.qq.com</code> 文档页的字段名为准。</td></tr>
+<tr><td>回复了但 <code>@</code> 显示成一串英文代码</td><td>@ 标签只在 <b>markdown 消息（msg_type=2）</b>里才会渲染成蓝色 @，纯文本里就是原样显示</td><td>用本仓库代码即已走 markdown；自行改动时别把第二条回复换成纯文本。</td></tr>
+<tr><td>名单是空的 / <code>pending=0</code></td><td>令牌过期，或列名与第 1 步要求不符，或 <code>ROLLCALL_API_URL</code>/<code>PAGE_ID</code> 填错</td><td>先看函数<b>执行日志</b>：<code>HTTP 403</code> = 令牌过期；<code>metadata 缺少「宿舍号」列</code> = 列名不对。</td></tr>
+<tr><td>「绑定」发了没反应</td><td>用<b>班长自己</b>的学号测（班长学号通常不在"宿舍长学号"列）；或消息被当无关内容忽略</td><td>换真正的宿舍长学号；@ 时要把机器人<b>点选</b>成蓝色名片，手打名字无效。</td></tr>
+<tr><td>改了代码没生效</td><td>只重新打包没重新上传，或上传的 zip 里多了一层 <code>src/</code></td><td>控制台「函数代码 → 本地上传 zip 包」重新传一次；<b>注意「提交方法」下拉每次都会退回"在线编辑"，要先选"本地上传 zip 包"再选文件</b>。</td></tr>
+<tr><td>保存 QQ 后台设置时提示 <code>40001</code>/<code>40002</code></td><td>平台保存时会重新验签，签名耗时超了 3 秒</td><td>内存调到 256MB 后重试；重试前先点一次"测试"确认函数能正常返回。</td></tr>
+</table>
+
+<h3>7.3 三条硬规矩</h3>
+<ul>
+<li><b>凭据只走环境变量</b>：AppSecret、访问令牌、同学 openid 一律不写进代码、不提交进仓库、不发到群里。</li>
+<li><b>只用 QQ 开放平台官方 Bot API</b>：任何"第三方协议库/插件"都可能造成封号，本项目一行都不用。</li>
+<li><b>不要为"方便调试"随意开通计费产品</b>：日志服务 CLS、COS 等都是按量收费，本项目的免费额度足够；不看不影响运维（用 5.1 的控制台测试面板即可）。</li>
+</ul>
+
+<h2><span class="step">第 8 步</span>费用与合规（一句话结论：基本不花钱）</h2>
+<table>
+<tr><th>项目</th><th>费用</th></tr>
+<tr><td>QQ 开放平台 Bot API</td><td>免费，仅有调用频率限制。</td></tr>
+<tr><td>南大表格（SeaTable）接口</td><td>免费（校内自有实例）。代价只是<b>令牌约 3 天要换一次</b>。</td></tr>
+<tr><td>腾讯云函数 SCF</td><td>每月免费额度（调用次数 + 内存×时长）远够用。实测：128MB × 约 0.5～2 秒/次，全班每天几十次，一个月用量比免费额度低三四个数量级。<b>本仓库实测账号连续三月账单 0.00 元。</b></td></tr>
+<tr><td>会花钱的情形</td><td>开通日志服务 CLS、COS、NAT/固定公网 IP、NAS，或把内存/超时调很大且高频调用。教程不涉及，动手前请先看清计费提示。</td></tr>
+</table>
+<p><b>合规提醒：</b>「宿舍长学号 + 姓名 + 是否到位」属于同学个人信息，只在班级群内展示、不要导出到公网；<code>QQ_ROSTER_JSON</code> 里的 openid 是 QQ 群内匿名标识，但同样按个人信息对待，只存在云函数环境变量里。面向全班正式发布前，请完成 QQ 开放平台的<b>个人主体认证</b>并按平台要求提交审核。</p>
+
+<div class="pagebreak"></div>
+<h2>附录 A　指令一览</h2>
+<table>
+<tr><th>群里发</th><th>机器人回</th></tr>
+<tr><td><code>@机器人 查未点名</code> 或 <code>@机器人 点名</code></td><td>①未报/异常宿舍文字名单 ②markdown 消息：逐个真 @ 未报宿舍长（已绑定的）</td></tr>
+<tr><td><code>@机器人 绑定 学号</code></td><td>核对成功 → 回「学号=openid」供登记；学号不是宿舍长 → 直接说明</td></tr>
+<tr><td><code>@机器人 帮助</code></td><td>用法说明</td></tr>
+</table>
+
+<h2>附录 B　想改文案 / 改逻辑，改哪一行</h2>
+<table>
+<tr><th>想做的事</th><th>改哪里</th></tr>
+<tr><td>改「全部到位」的判定值</td><td><code>src/api.py</code> 常量 <code>OK_STATUS</code></td></tr>
+<tr><td>改名单文案、@ 的措辞</td><td><code>src/api.py::build_rollcall_reply</code>、<code>src/bot.py::_mention_unreported</code></td></tr>
+<tr><td>改加指令（如「查我的」）</td><td><code>src/bot.py</code> 顶部命令常量 + <code>_handle_group_message</code> 加分支</td></tr>
+<tr><td>改"多久提醒换令牌"</td><td><code>src/api.py</code> 常量 <code>TOKEN_WARN_HOURS</code></td></tr>
+<tr><td>改机器人自动回复的兜底文案（查询失败等）</td><td><code>src/bot.py</code> 中 <code>_fetch_rows</code>、<code>HELP_TEXT</code></td></tr>
+<tr><td>换点名表（别的 base / 页面）</td><td>只改环境变量 <code>ROLLCALL_API_URL</code> + <code>ROLLCALL_PAGE_ID</code>，不用动代码</td></tr>
+</table>
+<p class="small">改完务必跑一遍 <code>python -m unittest discover -s tests</code>，再重新打包上传（第 4.1 步）。<b>教训：</b>自测数据要逐字段照官方文档构造——本项目曾因为按"想象中的字段名"写代码、又用同一份想象数据自证通过，让一个 bug 顺利穿过本地测试上了生产。</p>
+
+<h2>附录 C　开发时踩过的坑（省你一天）</h2>
+<ol>
+<li>事件类型字段是 <b><code>t</code></b> 不是 <code>type</code>；写错的表现是"函数被调用、1 毫秒返回、群里毫无反应"。</li>
+<li>QQ 的 <code>HTTPError</code> 字符串里<b>没有</b>错误原因，真正的 <code>code/message</code> 在响应体里；不读出来就永远查不到为什么没发出去（本仓库已处理）。</li>
+<li>平台的 access token 是<b>全平台共享的一张票在倒数</b>（实测约 50 分钟），不是每次调用都给新的 7200 秒；别拿"我调试时把它的票顶掉了"解释偶发失败。</li>
+<li>平台会自动给每条被动回复加 <code>@触发者</code> 前缀，判断"我们的 @ 有没有生效"时要把它排除掉。</li>
+<li>被动回复的 <code>msg_id</code> 只有 <b>5 分钟</b>有效、最多回 <b>5 条</b>（<code>msg_seq</code> 1~5）；所以机器人不能靠"事后补发"提醒。</li>
+<li>QQ 号<b>不能</b>直接换算成 <code>member_openid</code>，官方也没有转换接口——这就是第 6 步必须让每人自己发一次"绑定"的唯一原因。</li>
+<li>SCF 的 API 网关触发器已不可新建，用「函数 URL」并勾选<b>参数兼容</b>。</li>
+<li>控制台与 QQ 开放平台的网页登录态约 1 小时过期，重登要<b>本人扫码</b>；操作前先看还在不在登录态。</li>
+</ol>
+
+<p class="small" style="margin-top:26pt;border-top:1px solid #d0d7de;padding-top:8pt">
+本教程由技科 7 班实测记录整理，配置项与接口行为以 <code>bot.q.qq.com</code>、<code>cloud.tencent.com/document</code>、<code>seatable.cn</code> 官方文档及你所在校的表格实际情况为准。遇到问题把机器人回复原文和函数「执行日志」贴给 AI 助手即可定位。祝顺利。
+</p>
+
+</body>
+</html>
